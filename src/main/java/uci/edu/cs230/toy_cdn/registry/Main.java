@@ -5,6 +5,7 @@ import org.apache.logging.log4j.Logger;
 import org.zeromq.SocketType;
 import org.zeromq.ZContext;
 import org.zeromq.ZMQ;
+import org.zeromq.ZMsg;
 
 import java.io.IOException;
 import java.util.Properties;
@@ -25,21 +26,28 @@ public class Main {
         }
 
         ZContext ctx = new ZContext();
-        ZMQ.Socket socket = ctx.createSocket(SocketType.REP);
+        ZMQ.Socket server = ctx.createSocket(SocketType.REP);
 
         var address = configProp.getProperty("registry.address", "*");
         var port = configProp.getProperty("registry.port", "5555");
-        socket.bind(String.format("tcp://%s:%s", address, port));
+        server.bind(String.format("tcp://%s:%s", address, port));
         LOG.info(String.format("Registry start listening on %s:%s ...", address, port));
 
         RegistrationListener regListener = new RegistrationListener();
 
         while(!Thread.currentThread().isInterrupted()) {
-            byte[] rawReq = socket.recv(0);
+            var recvZMsg = ZMsg.recvMsg(server);
+            var rawReq = recvZMsg.pop().getData();
             LOG.info("Receive message length " + rawReq.length);
-            var rep = regListener.onMessage(rawReq);
-            socket.send(rep, 0);
-            LOG.info("Response with message length " + rep.length);
+
+            var resp = regListener.onMessage(rawReq);
+
+            recvZMsg.destroy();
+            LOG.info("Response with message length " + resp.length);
+            var respZMsg = new ZMsg();
+            respZMsg.add(resp);
+            respZMsg.send(server);
+            respZMsg.destroy();
         }
     }
 }
