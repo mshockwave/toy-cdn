@@ -59,10 +59,13 @@ public class EndPointRecords {
         mEndPoints = new ArrayList<>();
     }
 
-    public EndPointRecord addEndPoint(RegistrationReq fbsReq) {
-        var endPoint = EndPointRecord.from(fbsReq);
-        mEndPoints.add(endPoint);
-        return endPoint;
+    boolean containsEndPoint(EndPointRecord endPoint) {
+        return mEndPoints.parallelStream()
+                .anyMatch(record -> record.IpAddress.equals(endPoint.IpAddress) && record.Port == endPoint.Port);
+    }
+
+    public boolean containsEndPoint(RegistrationReq fbsReq) {
+        return containsEndPoint(EndPointRecord.from(fbsReq));
     }
 
     void addEndPoint(EndPointRecord endPoint) {
@@ -71,7 +74,7 @@ public class EndPointRecords {
 
     public List<EndPointRecord> join(RegistrationReq fbsReq,
                                      double radiusKm, int minimumNeighbors) {
-        var endPoint = addEndPoint(fbsReq);
+        var endPoint = EndPointRecord.from(fbsReq);
         return join(endPoint, radiusKm, minimumNeighbors);
     }
 

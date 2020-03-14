@@ -8,6 +8,7 @@ import uci.edu.cs230.toy_cdn.registry.fbs.RegistrationResp;
 import uci.edu.cs230.toy_cdn.registry.fbs.RegistrationStatus;
 
 import java.nio.ByteBuffer;
+import java.util.Objects;
 
 public class RegistrationListener implements StatelessMessageListener {
     private FlatBufferBuilder mRespBuilder;
@@ -27,7 +28,6 @@ public class RegistrationListener implements StatelessMessageListener {
         mEndPointRepo = new EndPointRecords();
     }
 
-    /*
     private byte[] getFailedResponse(byte status) {
         mRespBuilder.clear();
         // Empty neighbors
@@ -39,11 +39,20 @@ public class RegistrationListener implements StatelessMessageListener {
         mRespBuilder.finish(resp);
         return mRespBuilder.sizedByteArray();
     }
-    */
 
     public byte[] onMessage(byte[] message) {
         var inMsgBuffer = ByteBuffer.wrap(message);
         var request = RegistrationReq.getRootAsRegistrationReq(inMsgBuffer);
+
+        // Sanity checks
+        if(Objects.requireNonNull(request.address().ipAddress()).length() == 0
+            || request.address().port() <= 0) {
+            return getFailedResponse(RegistrationStatus.FAILED_INVALID_FORMAT);
+        }
+        if(mEndPointRepo.containsEndPoint(request)) {
+            return getFailedResponse(RegistrationStatus.FAILED_DUPLICATE);
+        }
+
         var neighborEndPoints = mEndPointRepo.join(request, NEIGHBOR_RADIUS_KM, NUM_MINIMUM_NEIGHBOR);
 
         mRespBuilder.clear();
