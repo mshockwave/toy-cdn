@@ -1,0 +1,30 @@
+namespace uci.edu.cs230.toy_cdn.registry.fbs;
+
+enum RegistrationStatus : byte {
+    OK = 0,
+    FAILED_INVALID_FORMAT = 1,
+    FAILED_DUPLICATE = 2,
+    FAILED_UNKNOWN = 3
+}
+
+struct GeoLocation {
+    latitude: float;
+    longitude: float;
+}
+
+table EndPoint {
+    ipAddress: string;
+    port: int;
+}
+
+table RegistrationReq {
+    location: GeoLocation;
+    address: EndPoint;
+}
+root_type RegistrationReq;
+
+table RegistrationResp {
+    status: RegistrationStatus = OK;
+    neighbors: [EndPoint];
+}
+root_type RegistrationResp;
