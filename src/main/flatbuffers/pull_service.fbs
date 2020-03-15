@@ -1,8 +1,0 @@
-namespace uci.edu.cs230.toy_cdn.fbs;
-
-table RelayHeader {
-    requestSeq: long;
-    fileId: string;
-}
-
-root_type RelayHeader;

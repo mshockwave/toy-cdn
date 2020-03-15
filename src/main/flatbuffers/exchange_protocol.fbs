@@ -1,0 +1,13 @@
+namespace uci.edu.cs230.toy_cdn.fbs;
+
+struct TraceNode {
+    nodeId: long;
+    sequence: int;
+}
+
+table FileExchangeHeader {
+    trace: [TraceNode];
+    fileId: string;
+}
+
+root_type FileExchangeHeader;
