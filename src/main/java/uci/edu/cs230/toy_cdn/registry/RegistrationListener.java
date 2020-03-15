@@ -1,7 +1,7 @@
 package uci.edu.cs230.toy_cdn.registry;
 
 import com.google.flatbuffers.FlatBufferBuilder;
-import uci.edu.cs230.toy_cdn.StatelessMessageListener;
+import uci.edu.cs230.toy_cdn.RawMessageListener;
 import uci.edu.cs230.toy_cdn.registry.fbs.EndPoint;
 import uci.edu.cs230.toy_cdn.registry.fbs.RegistrationReq;
 import uci.edu.cs230.toy_cdn.registry.fbs.RegistrationResp;
@@ -10,7 +10,7 @@ import uci.edu.cs230.toy_cdn.registry.fbs.RegistrationStatus;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
-public class RegistrationListener implements StatelessMessageListener {
+public class RegistrationListener implements RawMessageListener {
     private FlatBufferBuilder mRespBuilder;
     private EndPointRecords mEndPointRepo;
 

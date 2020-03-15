@@ -27,10 +27,7 @@ public class Main {
         return new EndPointAddress(address, port);
     }
 
-    /**
-     * Step 1: Communicate with registry to figure out the neighbors
-     * */
-    private static List<EndPointAddress> initEndPoints(Properties configProp) {
+    private static List<EndPointAddress> fetchNeighborEndPoints(Properties configProp) {
         var registryAddr = configProp.getProperty("cdn.registry_address", "localhost");
         var registryPort = configProp.getProperty("cdn.registry_port", "4444");
         LOG.debug(String.format("Connecting to registry @ %s:%s ...", registryAddr, registryPort));
@@ -101,7 +98,10 @@ public class Main {
             return;
         }
 
-        var neighborEndPoints = initEndPoints(configProp);
+        /*
+         * Step 1: Communicate with registry to figure out the neighbors
+         * */
+        var neighborEndPoints = fetchNeighborEndPoints(configProp);
         if(neighborEndPoints == null) {
             LOG.error("Failed to retrieve neighbor end points");
         } else {
