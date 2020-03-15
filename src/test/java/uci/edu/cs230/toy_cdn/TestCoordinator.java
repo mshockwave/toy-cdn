@@ -7,8 +7,10 @@ import org.zeromq.ZContext;
 import org.zeromq.ZMsg;
 import uci.edu.cs230.toy_cdn.fbs.FileExchangeHeader;
 import uci.edu.cs230.toy_cdn.fbs.TraceNode;
+import zmq.ZMQ;
 
 import java.nio.ByteBuffer;
+import java.util.Optional;
 
 public class TestCoordinator {
     @Test
@@ -66,7 +68,27 @@ public class TestCoordinator {
 
     @Test
     public void testRespondHandlerRelayDuplicate() {
-        var respondHandler = new Coordinator.RespondHandler(87);
+        var dummyAnalysis = new Coordinator.AnalysisQueryInterface() {
+
+            @Override
+            public boolean keep(String fileId) {
+                return false;
+            }
+        };
+        var dummyFileStorage = new Coordinator.LocalStorageInterface() {
+
+            @Override
+            public Optional<byte[]> fetchFile(String fileId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public void putFile(String fileId, byte[] content) {
+                Assert.assertTrue("File size larger than zero", content.length > 0);
+            }
+        };
+
+        var respondHandler = new Coordinator.RespondHandler(87, dummyAnalysis, dummyFileStorage);
 
         var header1 = createExchangeHeader("file1",
                 new TraceNodeStruct(0, 1),
@@ -78,7 +100,9 @@ public class TestCoordinator {
         msg1.add("content1-2");
         var relay = respondHandler.onMessage(msg1);
         msg1.destroy();
-        Assert.assertEquals("Message size of 3", 3, relay.size());
+        Assert.assertEquals("Message size of 4", 4, relay.size());
+        var actionHeader = relay.pop();
+        Assert.assertEquals("RESPOND", actionHeader.getString(ZMQ.CHARSET));
         var rawRelayHeader = relay.pop();
         var relayHeader = FileExchangeHeader.getRootAsFileExchangeHeader(ByteBuffer.wrap(rawRelayHeader.getData()));
         Assert.assertEquals("file1", relayHeader.fileId());
@@ -112,7 +136,7 @@ public class TestCoordinator {
         msg3.add("content3");
         relay = respondHandler.onMessage(msg3);
         msg3.destroy();
-        Assert.assertEquals("Message size of 2", 2, relay.size());
+        Assert.assertEquals("Message size of 3", 3, relay.size());
         relay.destroy();
 
         // Not duplicate with header1
@@ -125,12 +149,75 @@ public class TestCoordinator {
         msg4.add("content4");
         relay = respondHandler.onMessage(msg4);
         msg4.destroy();
-        Assert.assertEquals("Message size of 2", 2, relay.size());
+        Assert.assertEquals("Message size of 3", 3, relay.size());
+        relay.pop();
         rawRelayHeader = relay.pop();
         relayHeader = FileExchangeHeader.getRootAsFileExchangeHeader(ByteBuffer.wrap(rawRelayHeader.getData()));
         Assert.assertEquals("file4", relayHeader.fileId());
         Assert.assertEquals(2, relayHeader.traceLength());
         Assert.assertEquals(9, relayHeader.trace(1).nodeId());
         relay.destroy();
+    }
+
+    @Test
+    public void testRequestHandlerRelayAndHit() {
+        var localStorage = new Coordinator.LocalStorageInterface() {
+            @Override
+            public Optional<byte[]> fetchFile(String fileId) {
+                if(fileId.equals("file2")) return Optional.of("content2".getBytes());
+                if(fileId.equals("file3")) return Optional.of("content3".getBytes());
+                return Optional.empty();
+            }
+
+            @Override
+            public void putFile(String fileId, byte[] content) { }
+        };
+
+        var requestHandler = new Coordinator.RequestHandler(94, localStorage);
+
+        // Not hit. Relay instead
+        var header1 = createExchangeHeader("file1",
+                new TraceNodeStruct(0, 1),
+                new TraceNodeStruct(1, 1),
+                new TraceNodeStruct(87, 1));
+        var msg = new ZMsg();
+        msg.add(header1);
+        var reply = requestHandler.onMessage(msg);
+        msg.destroy();
+        Assert.assertEquals("Message size of 2", 2, reply.size());
+        var action = reply.pop();
+        Assert.assertEquals("REQUEST", action.getString(ZMQ.CHARSET).toUpperCase());
+        reply.destroy();
+
+        var header2 = createExchangeHeader("file2",
+                new TraceNodeStruct(3, 1));
+        msg = new ZMsg();
+        msg.add(header2);
+        reply = requestHandler.onMessage(msg);
+        msg.destroy();
+        Assert.assertEquals("Message size of 3", 3, reply.size());
+        action = reply.pop();
+        Assert.assertEquals("RESPOND", action.getString(ZMQ.CHARSET).toUpperCase());
+        // header
+        reply.pop();
+        var content = reply.pop();
+        Assert.assertTrue(content.getString(ZMQ.CHARSET).contains("content2"));
+        reply.destroy();
+
+        var header3 = createExchangeHeader("file3",
+                new TraceNodeStruct(87, 1),
+                new TraceNodeStruct(65, 1));
+        msg = new ZMsg();
+        msg.add(header3);
+        reply = requestHandler.onMessage(msg);
+        msg.destroy();
+        Assert.assertEquals("Message size of 3", 3, reply.size());
+        action = reply.pop();
+        Assert.assertEquals("RESPOND", action.getString(ZMQ.CHARSET).toUpperCase());
+        // header
+        reply.pop();
+        content = reply.pop();
+        Assert.assertTrue(content.getString(ZMQ.CHARSET).contains("content3"));
+        reply.destroy();
     }
 }
