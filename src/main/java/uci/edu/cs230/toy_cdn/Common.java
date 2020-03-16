@@ -21,8 +21,14 @@ public class Common {
      * */
     public static final String EXG_ACTION_REQUEST = "REQUEST";
     public static final String EXG_ACTION_RESPOND = "RESPOND";
+    public static final String EXG_ACTION_NEW_NEIGHBOR = "NEW_NEIGHBOR";
 
     public static final String EXG_TOPIC_ALL = "BROADCAST";
+
+    /**
+     * Internal Protocol Related
+     * */
+    public static final String INT_ACTION_SUBSCRIBE = "SUBSCRIBE";
 
     public static long getNodeId(EndPointAddress address) {
         return getNodeId(address.IpAddress, address.Port);

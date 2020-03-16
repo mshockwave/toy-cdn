@@ -4,12 +4,15 @@ import com.google.flatbuffers.FlatBufferBuilder;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.zeromq.*;
+import uci.edu.cs230.toy_cdn.fbs.EndPoint;
 import uci.edu.cs230.toy_cdn.fbs.FileExchangeHeader;
+import uci.edu.cs230.toy_cdn.fbs.Subscription;
 import uci.edu.cs230.toy_cdn.fbs.TraceNode;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -41,6 +44,8 @@ public class Coordinator extends Thread {
     private RequestHandler mRequestHandler;
     private AnalysisEngineAgent mAEAgent;
 
+    private List<EndPointAddress> mInitialNeighbors;
+
     /**
      * only used for testing
      * */
@@ -49,22 +54,25 @@ public class Coordinator extends Thread {
     private static final class PollId {
         public static final int PULL_SERVICE = 0;
         public static final int ANALYSIS_ENGINE = 1;
-        public static final int Size = 2;
+        public static final int HAND_SHAKING = 2;
+        public static final int Size = 3;
     }
 
     /**
      * For testing only
      * */
-    Coordinator(ZContext ipcContext, long selfNodeId, EndPointAddress address) {
+    Coordinator(ZContext ipcContext, long selfNodeId, EndPointAddress address, List<EndPointAddress> initialNeighbors) {
         mCtx = ipcContext;
         mSelfNodeId = selfNodeId;
         mExternalAddress = address;
+        mInitialNeighbors = initialNeighbors;
     }
 
-    public Coordinator(ZContext ipcContext, EndPointAddress address) {
+    public Coordinator(ZContext ipcContext, EndPointAddress address, List<EndPointAddress> initialNeighbors) {
         mCtx = ipcContext;
         mExternalAddress = address;
         mSelfNodeId = Common.getNodeId(mExternalAddress);
+        mInitialNeighbors = initialNeighbors;
     }
 
     private void init() {
@@ -114,6 +122,54 @@ public class Coordinator extends Thread {
         mAEAgent = new AnalysisEngineAgent();
         mRespondHandler = new RespondHandler(mSelfNodeId, mAEAgent, mStorageAgent);
         mRequestHandler = new RequestHandler(mSelfNodeId, mStorageAgent);
+    }
+
+    private ZMsg subscribeToNeighbors(List<EndPointAddress> neighborEndPoints) {
+        var builder = new FlatBufferBuilder(0);
+        Subscription.startEndPointsVector(builder, neighborEndPoints.size());
+        // reverse order
+        for(int i = neighborEndPoints.size() - 1; i >= 0; --i) {
+            var endPoint = neighborEndPoints.get(i);
+            var ipAddressOffset = builder.createString(endPoint.IpAddress);
+            // Their PushService would listen on port of HandShaking + 1
+            EndPoint.createEndPoint(builder, ipAddressOffset, endPoint.Port + 1);
+        }
+        int endPointsOffset = builder.endVector();
+        int subscription = Subscription.createSubscription(builder, endPointsOffset);
+        builder.finish(subscription);
+
+        var subscriptionMsg = new ZMsg();
+        subscriptionMsg.add(Common.INT_ACTION_SUBSCRIBE);
+        subscriptionMsg.add(builder.sizedByteArray());
+        return subscriptionMsg;
+    }
+
+    private void initializeNeighbors() {
+        // Phase 1. Subscribe to all neighbors
+        var subscriptionMsg = subscribeToNeighbors(mInitialNeighbors);
+        subscriptionMsg.send(mSocketPullControl);
+        LOG.debug("Subscribe to neighbors");
+
+        // Phase 2. Tell them to subscribe to me
+        var builder = new FlatBufferBuilder(0);
+        var addressOffset = builder.createString(mExternalAddress.IpAddress);
+        int endPointOffset = EndPoint.createEndPoint(builder, addressOffset, mExternalAddress.Port);
+        builder.finish(endPointOffset);
+
+        var greetingMsg = new ZMsg();
+        greetingMsg.add(Common.EXG_ACTION_NEW_NEIGHBOR);
+        greetingMsg.add(builder.sizedByteArray());
+        for(var neighbor : mInitialNeighbors) {
+            var socket = mCtx.createSocket(SocketType.REQ);
+            var addressStr = String.format("tcp://%s:%d", neighbor.IpAddress, neighbor.Port);
+            if(!socket.connect(addressStr)) {
+                LOG.error("Can not connect to neighbor " + addressStr);
+                continue;
+            }
+            greetingMsg.duplicate().send(socket);
+            socket.close();
+        }
+        LOG.debug("Greeting to neighbors");
     }
 
     interface AnalysisQueryInterface {
@@ -373,18 +429,39 @@ public class Coordinator extends Thread {
     }
 
     private void handleAnalysisEngine() {
+        // TODO
+    }
 
+    ZMsg handleHandShaking(ZMsg message) {
+        assert message.size() >= 2;
+        var action = message.popString();
+        if(action.toUpperCase().equals(Common.EXG_ACTION_NEW_NEIGHBOR)) {
+            // Subscribe to its PushService
+            var rawEndPointHeader = message.pop().getData();
+            var endPointHeader = EndPoint.getRootAsEndPoint(ByteBuffer.wrap(rawEndPointHeader));
+            return subscribeToNeighbors(
+                    List.of(new EndPointAddress(endPointHeader.ipAddress(), endPointHeader.port()))
+            );
+        } else {
+            LOG.error(String.format("Unrecognized action \"%s\"", action));
+            return new ZMsg();
+        }
     }
 
     @Override
     public void run() {
         init();
+
+        // Subscribe to initial sets of neighbors
+        initializeNeighbors();
+
         if(InitializeOnly) return;
 
         LOG.debug("Registering pollers...");
         ZMQ.Poller poller = mCtx.createPoller(PollId.Size);
         poller.register(mSocketPullService, ZMQ.Poller.POLLIN);
         poller.register(mSocketAE, ZMQ.Poller.POLLIN);
+        poller.register(mSocketHandShaking, ZMQ.Poller.POLLIN);
 
         while(!Thread.currentThread().isInterrupted()) {
             poller.poll();
@@ -396,6 +473,18 @@ public class Coordinator extends Thread {
             if(poller.pollin(PollId.ANALYSIS_ENGINE)) {
                 LOG.debug("Receive one event from AnalysisEngine");
                 handleAnalysisEngine();
+            }
+
+            if(poller.pollin(PollId.HAND_SHAKING)) {
+                LOG.debug("Receive one event from HandShaking");
+                var recvMsg = ZMsg.recvMsg(mSocketHandShaking);
+                var outputMsg = handleHandShaking(recvMsg);
+                recvMsg.destroy();
+                if(outputMsg.size() > 0) {
+                    // So far PullControl is the only place HandShaking
+                    // will deliver message to
+                    outputMsg.send(mSocketPullControl);
+                }
             }
         }
     }

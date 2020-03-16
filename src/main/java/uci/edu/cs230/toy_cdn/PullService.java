@@ -58,7 +58,7 @@ public class PullService extends Thread {
         }
 
         var action = recvMsg.pop().getString(ZMQ.CHARSET);
-        if(action.toUpperCase().equals("SUBSCRIBE")) {
+        if(action.toUpperCase().equals(Common.INT_ACTION_SUBSCRIBE)) {
             var rawSubscription = recvMsg.pop();
             var subscription = Subscription.getRootAsSubscription(ByteBuffer.wrap(rawSubscription.getData()));
 

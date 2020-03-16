@@ -9,4 +9,5 @@ table Subscription {
     endPoints: [EndPoint];
 }
 
+root_type EndPoint;
 root_type Subscription;

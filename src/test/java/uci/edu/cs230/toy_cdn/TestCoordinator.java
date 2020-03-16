@@ -10,6 +10,7 @@ import uci.edu.cs230.toy_cdn.fbs.TraceNode;
 import zmq.ZMQ;
 
 import java.nio.ByteBuffer;
+import java.util.List;
 import java.util.Optional;
 
 public class TestCoordinator {
@@ -18,7 +19,8 @@ public class TestCoordinator {
         ZContext ctx = new ZContext();
 
         var coordinator = new Coordinator(ctx,
-                0, new EndPointAddress("localhost", 4444));
+                0, new EndPointAddress("localhost", 4444),
+                List.of());
         coordinator.InitializeOnly = true;
         var pullService = new PullService(ctx, 0);
         pullService.InitializeOnly = true;
