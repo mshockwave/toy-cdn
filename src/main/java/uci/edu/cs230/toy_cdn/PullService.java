@@ -71,6 +71,7 @@ public class PullService extends Thread {
                     continue;
                 }
                 socket.subscribe(String.format("%d", mSelfId));
+                socket.subscribe(Common.EXG_TOPIC_ALL);
                 mPoller.register(socket, ZMQ.Poller.POLLIN);
                 mSocketSubscriptions.add(socket);
             }
@@ -99,12 +100,15 @@ public class PullService extends Thread {
             for(int i = 0; i < mSocketSubscriptions.size() - 1; ++i) {
                 if(mPoller.pollin(i + 1)) {
                     // For now, we simply forward the message to coordinator
+                    // with first frame (i.e. the subscription topic) removed
                     var socket = mSocketSubscriptions.get(i);
                     var recvMsg = ZMsg.recvMsg(socket);
                     if(recvMsg.size() < 1) {
                         LOG.error("Receive empty message");
                         continue;
                     }
+                    // remove subscription topic frame
+                    recvMsg.pop();
                     var forwardMsg = recvMsg.duplicate();
                     recvMsg.destroy();
                     forwardMsg.send(mSocketInternalLink);

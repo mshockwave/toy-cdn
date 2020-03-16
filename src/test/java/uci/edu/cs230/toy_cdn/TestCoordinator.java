@@ -24,15 +24,19 @@ public class TestCoordinator {
         pullService.InitializeOnly = true;
         var analysisEngine = new AnalysisEngineService(ctx);
         analysisEngine.InitializeOnly = true;
+        var pushService = new PushService(ctx, new EndPointAddress("localhost", 4445));
+        pushService.InitializeOnly = true;
 
         try {
             analysisEngine.start();
             pullService.start();
+            pushService.start();
             coordinator.start();
 
             pullService.join();
             analysisEngine.join();
             coordinator.join();
+            pushService.join();
         }catch (InterruptedException e) {
             throw new AssertionError("Interrupted");
         }

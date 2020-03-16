@@ -98,8 +98,11 @@ public class Coordinator extends Thread {
         mSocketPushService = mCtx.createSocket(SocketType.PUSH);
         mSocketPushService.bind(Common.EP_INT_COORDINATOR);
         syncPushService = mCtx.createSocket(SocketType.PAIR);
-        syncPushService.connect(Common.EP_INT_PUSH_SERVICE);
+        syncPushService.connect(Common.EP_INT_SYNC_COORDINATOR_PUSH);
         syncPushService.send("READY", 0);
+
+        // wait for ping back
+        syncPushService.recv(0);
         syncPushService.close();
 
         LOG.debug("Setup handshaking end point");
@@ -246,7 +249,7 @@ public class Coordinator extends Thread {
                 // add rest of the original message body
                 var relayMsg = message.duplicate();
                 relayMsg.addFirst(builder.sizedByteArray());
-                relayMsg.addFirst("RESPOND");
+                relayMsg.addFirst(Common.EXG_ACTION_RESPOND);
                 return relayMsg;
             }
 
@@ -289,7 +292,7 @@ public class Coordinator extends Thread {
             if(file.isPresent()) {
                 // Send the file
                 var respondMsg = new ZMsg();
-                respondMsg.add("RESPOND");
+                respondMsg.add(Common.EXG_ACTION_RESPOND);
                 respondMsg.add(rawExchangeHeader);
                 respondMsg.add(file.get());
                 return respondMsg;
@@ -313,7 +316,7 @@ public class Coordinator extends Thread {
                 builder.finish(newExchangeHeader);
 
                 var relayMsg = new ZMsg();
-                relayMsg.add("REQUEST");
+                relayMsg.add(Common.EXG_ACTION_REQUEST);
                 relayMsg.add(builder.sizedByteArray());
                 return relayMsg;
             }
@@ -330,7 +333,7 @@ public class Coordinator extends Thread {
         var actionHeader = recvMsg.pop();
         var actionStr = actionHeader.getString(ZMQ.CHARSET);
         switch (actionStr.toUpperCase()) {
-            case "RESPOND": {
+            case Common.EXG_ACTION_RESPOND: {
                 var relayMsg = mRespondHandler.onMessage(recvMsg);
                 // Do nothing if it's empty message
                 if(relayMsg.size() > 0) {
@@ -338,7 +341,7 @@ public class Coordinator extends Thread {
                 }
                 break;
             }
-            case "REQUEST": {
+            case Common.EXG_ACTION_REQUEST: {
                 var respondMsg = mRequestHandler.onMessage(recvMsg);
                 if(respondMsg.size() > 0) {
                     respondMsg.send(mSocketPushService);
