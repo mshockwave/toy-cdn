@@ -26,10 +26,10 @@ public class AnalysisEngineService extends Thread {
         LOG.info("Initializing AnalysisEngine...");
 
         mSocketInternal = mInternalCtx.createSocket(SocketType.PUSH);
-        mSocketInternal.bind("inproc://ae");
+        mSocketInternal.bind(Common.EP_INT_ANALYSIS_ENGINE);
         LOG.debug("Set up AnalysisEngineService");
         var syncInternal = mInternalCtx.createSocket(SocketType.PAIR);
-        syncInternal.connect("inproc://sync-coordinator-ae");
+        syncInternal.connect(Common.EP_INT_SYNC_COORDINATOR_AE);
         syncInternal.send("READY", 0);
         syncInternal.close();
     }

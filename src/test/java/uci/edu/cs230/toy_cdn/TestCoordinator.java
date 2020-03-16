@@ -17,9 +17,10 @@ public class TestCoordinator {
     public void testInitialization() {
         ZContext ctx = new ZContext();
 
-        var coordinator = new Coordinator(ctx, 0);
+        var coordinator = new Coordinator(ctx,
+                0, new EndPointAddress("localhost", 4444));
         coordinator.InitializeOnly = true;
-        var pullService = new PullService(ctx);
+        var pullService = new PullService(ctx, 0);
         pullService.InitializeOnly = true;
         var analysisEngine = new AnalysisEngineService(ctx);
         analysisEngine.InitializeOnly = true;

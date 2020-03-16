@@ -21,8 +21,20 @@ public class Coordinator extends Thread {
 
     private ZContext mCtx;
     private long mSelfNodeId;
+    private EndPointAddress mExternalAddress;
 
+    /**
+     * Single direction (i.e. Pull/Push) sockets
+     * */
     private ZMQ.Socket mSocketPullService, mSocketAE, mSocketPushService;
+    /**
+     * Special purpose sockets:
+     * HandShaking: A REP socket that accept external requests. Which are
+     * usually request to subscribe to other clusters.
+     * PullControl: An internal PAIR socket that send command to PullService.
+     * Usually commands that tell PullService to subscribe to certain cluster.
+     * */
+    private ZMQ.Socket mSocketHandShaking, mSocketPullControl;
 
     private LocalStorageAgent mStorageAgent;
     private RespondHandler mRespondHandler;
@@ -40,9 +52,19 @@ public class Coordinator extends Thread {
         public static final int Size = 2;
     }
 
-    public Coordinator(ZContext ipcContext, long selfNodeId) {
+    /**
+     * For testing only
+     * */
+    Coordinator(ZContext ipcContext, long selfNodeId, EndPointAddress address) {
         mCtx = ipcContext;
         mSelfNodeId = selfNodeId;
+        mExternalAddress = address;
+    }
+
+    public Coordinator(ZContext ipcContext, EndPointAddress address) {
+        mCtx = ipcContext;
+        mExternalAddress = address;
+        mSelfNodeId = Common.getNodeId(mExternalAddress);
     }
 
     private void init() {
@@ -52,30 +74,37 @@ public class Coordinator extends Thread {
         ZMQ.Socket syncPullService, syncAE, syncPushService;
 
         syncPullService = mCtx.createSocket(SocketType.PAIR);
-        syncPullService.bind("inproc://sync-coordinator-pull");
+        syncPullService.bind(Common.EP_INT_SYNC_COORDINATOR_PULL);
         // Wait for ready signal
         syncPullService.recv(0);
         syncPullService.close();
-        LOG.debug("Subscribe to PullService");
         mSocketPullService = mCtx.createSocket(SocketType.PULL);
-        mSocketPullService.connect("inproc://pullservice");
+        mSocketPullService.connect(Common.EP_INT_PULL_SERVICE);
+        LOG.debug("Subscribe to PullService");
+        mSocketPullControl = mCtx.createSocket(SocketType.PAIR);
+        mSocketPullControl.connect(Common.EP_INT_PULL_CONTROL);
+        LOG.debug("PullControl connected");
 
         syncAE = mCtx.createSocket(SocketType.PAIR);
-        syncAE.bind("inproc://sync-coordinator-ae");
+        syncAE.bind(Common.EP_INT_SYNC_COORDINATOR_AE);
         // Wait for ready signal
         syncAE.recv(0);
         syncAE.close();
         LOG.debug("Subscribe to AnalysisEngine");
         mSocketAE = mCtx.createSocket(SocketType.PULL);
-        mSocketAE.connect("inproc://ae");
+        mSocketAE.connect(Common.EP_INT_ANALYSIS_ENGINE);
 
         LOG.debug("Setup end point for PushService");
         mSocketPushService = mCtx.createSocket(SocketType.PUSH);
-        mSocketPushService.bind("inproc://coordinator");
+        mSocketPushService.bind(Common.EP_INT_COORDINATOR);
         syncPushService = mCtx.createSocket(SocketType.PAIR);
-        syncPushService.connect("inproc://pushservice");
+        syncPushService.connect(Common.EP_INT_PUSH_SERVICE);
         syncPushService.send("READY", 0);
         syncPushService.close();
+
+        LOG.debug("Setup handshaking end point");
+        mSocketHandShaking = mCtx.createSocket(SocketType.REP);
+        mSocketHandShaking.bind(String.format("tcp://%s:%s", mExternalAddress.IpAddress, mExternalAddress.Port));
 
         // Initialize components
         mStorageAgent = new LocalStorageAgent();

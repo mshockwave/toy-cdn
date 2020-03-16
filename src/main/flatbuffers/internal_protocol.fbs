@@ -1,0 +1,12 @@
+namespace uci.edu.cs230.toy_cdn.fbs;
+
+table EndPoint {
+    ipAddress: string;
+    port: int;
+}
+
+table Subscription {
+    endPoints: [EndPoint];
+}
+
+root_type Subscription;
