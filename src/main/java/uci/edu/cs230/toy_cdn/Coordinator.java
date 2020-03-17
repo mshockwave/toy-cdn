@@ -39,7 +39,6 @@ public class Coordinator extends Thread {
     private LocalStorageInterface mLocalStorage;
     private boolean mDefaultLocalStorageInterface = true;
     private AnalysisAgentInterface mAnalysis;
-    private boolean mDefaultAnalysisInterface = true;
     private RespondHandler mRespondHandler;
     private RequestHandler mRequestHandler;
 
@@ -71,14 +70,11 @@ public class Coordinator extends Thread {
     Coordinator(ZContext ipcContext,
                 long selfNodeId, EndPointAddress address,
                 List<EndPointAddress> initialNeighbors,
-                LocalStorageInterface localStorageInterface,
-                AnalysisAgentInterface analysisInterface) {
+                LocalStorageInterface localStorageInterface) {
         this(ipcContext, selfNodeId, address, initialNeighbors);
 
         mDefaultLocalStorageInterface = false;
         mLocalStorage = localStorageInterface;
-        mDefaultAnalysisInterface = false;
-        mAnalysis = analysisInterface;
     }
 
     public Coordinator(ZContext ipcContext, EndPointAddress address, List<EndPointAddress> initialNeighbors) {
@@ -132,7 +128,7 @@ public class Coordinator extends Thread {
 
         // Initialize components
         if(mDefaultLocalStorageInterface) mLocalStorage = new LocalStorageAgent();
-        if(mDefaultAnalysisInterface ) mAnalysis = new AnalysisServiceAgent();
+        mAnalysis = new AnalysisServiceAgent(mSelfNodeId, mLocalStorage);
         mRespondHandler = new RespondHandler(mSelfNodeId, mAnalysis, mLocalStorage);
         mRequestHandler = new RequestHandler(mSelfNodeId, mLocalStorage);
     }
@@ -420,9 +416,24 @@ public class Coordinator extends Thread {
         }
 
         var outputMsg = mAnalysis.onMessage(recvMsg);
-        var action = outputMsg.popString();
-        if(action.toUpperCase().equals("REQUEST")) {
-            if(outputMsg.size() > 0) {
+        var action = outputMsg.peekFirst();
+        if(action == null) {
+            // empty message
+            return;
+        }
+        var actionStr = action.getString(ZMQ.CHARSET);
+        if(actionStr.toUpperCase().equals(Common.EXG_ACTION_REQUEST)) {
+            if(outputMsg.size() > 2) {
+                // split the message if there are multiple requests
+                outputMsg.pop(); // action header
+                outputMsg.forEach(frame -> {
+                    var reqMsg = new ZMsg();
+                    reqMsg.add(Common.EXG_ACTION_REQUEST);
+                    reqMsg.add(frame.duplicate());
+                    reqMsg.send(mSocketPushService);
+                });
+                outputMsg.destroy();
+            } else if(outputMsg.size() > 1) {
                 outputMsg.send(mSocketPushService);
             }
         } else {
