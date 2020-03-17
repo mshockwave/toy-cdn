@@ -11,10 +11,7 @@ import uci.edu.cs230.toy_cdn.fbs.TraceNode;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 /**
  * Central dispatcher
@@ -29,7 +26,7 @@ public class Coordinator extends Thread {
     /**
      * Single direction (i.e. Pull/Push) sockets
      * */
-    private ZMQ.Socket mSocketPullService, mSocketAE, mSocketPushService;
+    private ZMQ.Socket mSocketPullService, mSocketAnalysis, mSocketPushService;
     /**
      * Special purpose sockets:
      * HandShaking: A REP socket that accept external requests. Which are
@@ -39,10 +36,12 @@ public class Coordinator extends Thread {
      * */
     private ZMQ.Socket mSocketHandShaking, mSocketPullControl;
 
-    private LocalStorageAgent mStorageAgent;
+    private LocalStorageInterface mLocalStorage;
+    private boolean mDefaultLocalStorageInterface = true;
+    private AnalysisAgentInterface mAnalysis;
+    private boolean mDefaultAnalysisInterface = true;
     private RespondHandler mRespondHandler;
     private RequestHandler mRequestHandler;
-    private AnalysisEngineAgent mAEAgent;
 
     private List<EndPointAddress> mInitialNeighbors;
 
@@ -61,11 +60,25 @@ public class Coordinator extends Thread {
     /**
      * For testing only
      * */
-    Coordinator(ZContext ipcContext, long selfNodeId, EndPointAddress address, List<EndPointAddress> initialNeighbors) {
+    Coordinator(ZContext ipcContext,
+                long selfNodeId, EndPointAddress address,
+                List<EndPointAddress> initialNeighbors) {
         mCtx = ipcContext;
         mSelfNodeId = selfNodeId;
         mExternalAddress = address;
         mInitialNeighbors = initialNeighbors;
+    }
+    Coordinator(ZContext ipcContext,
+                long selfNodeId, EndPointAddress address,
+                List<EndPointAddress> initialNeighbors,
+                LocalStorageInterface localStorageInterface,
+                AnalysisAgentInterface analysisInterface) {
+        this(ipcContext, selfNodeId, address, initialNeighbors);
+
+        mDefaultLocalStorageInterface = false;
+        mLocalStorage = localStorageInterface;
+        mDefaultAnalysisInterface = false;
+        mAnalysis = analysisInterface;
     }
 
     public Coordinator(ZContext ipcContext, EndPointAddress address, List<EndPointAddress> initialNeighbors) {
@@ -98,9 +111,9 @@ public class Coordinator extends Thread {
         // Wait for ready signal
         syncAE.recv(0);
         syncAE.close();
-        LOG.debug("Subscribe to AnalysisEngine");
-        mSocketAE = mCtx.createSocket(SocketType.PULL);
-        mSocketAE.connect(Common.EP_INT_ANALYSIS_ENGINE);
+        LOG.debug("Subscribe to AnalysisService");
+        mSocketAnalysis = mCtx.createSocket(SocketType.PULL);
+        mSocketAnalysis.connect(Common.EP_INT_ANALYSIS_SERVICE);
 
         LOG.debug("Setup end point for PushService");
         mSocketPushService = mCtx.createSocket(SocketType.PUSH);
@@ -118,23 +131,22 @@ public class Coordinator extends Thread {
         mSocketHandShaking.bind(String.format("tcp://%s:%s", mExternalAddress.IpAddress, mExternalAddress.Port));
 
         // Initialize components
-        mStorageAgent = new LocalStorageAgent();
-        mAEAgent = new AnalysisEngineAgent();
-        mRespondHandler = new RespondHandler(mSelfNodeId, mAEAgent, mStorageAgent);
-        mRequestHandler = new RequestHandler(mSelfNodeId, mStorageAgent);
+        if(mDefaultLocalStorageInterface) mLocalStorage = new LocalStorageAgent();
+        if(mDefaultAnalysisInterface ) mAnalysis = new AnalysisServiceAgent();
+        mRespondHandler = new RespondHandler(mSelfNodeId, mAnalysis, mLocalStorage);
+        mRequestHandler = new RequestHandler(mSelfNodeId, mLocalStorage);
     }
 
     private ZMsg subscribeToNeighbors(List<EndPointAddress> neighborEndPoints) {
         var builder = new FlatBufferBuilder(0);
-        Subscription.startEndPointsVector(builder, neighborEndPoints.size());
-        // reverse order
-        for(int i = neighborEndPoints.size() - 1; i >= 0; --i) {
+        var endPointOffsets = new int[neighborEndPoints.size()];
+        for(int i =  0; i < neighborEndPoints.size(); ++i) {
             var endPoint = neighborEndPoints.get(i);
-            var ipAddressOffset = builder.createString(endPoint.IpAddress);
+            var addrOffset = builder.createString(endPoint.IpAddress);
             // Their PushService would listen on port of HandShaking + 1
-            EndPoint.createEndPoint(builder, ipAddressOffset, endPoint.Port + 1);
+            endPointOffsets[i] = EndPoint.createEndPoint(builder, addrOffset, endPoint.Port + 1);
         }
-        int endPointsOffset = builder.endVector();
+        var endPointsOffset = Subscription.createEndPointsVector(builder, endPointOffsets);
         int subscription = Subscription.createSubscription(builder, endPointsOffset);
         builder.finish(subscription);
 
@@ -180,6 +192,8 @@ public class Coordinator extends Thread {
         boolean keep(String fileId);
     }
 
+    abstract static class AnalysisAgentInterface implements AnalysisQueryInterface, MessageListener{ }
+
     interface LocalStorageInterface {
         /**
          * Fetch file content by the given fileId.
@@ -191,19 +205,6 @@ public class Coordinator extends Thread {
          * Put the file into local storage
          * */
         void putFile(String fileId, byte[] content);
-    }
-
-    static class LocalStorageAgent implements LocalStorageInterface {
-
-        @Override
-        public Optional<byte[]> fetchFile(String fileId) {
-            return Optional.empty();
-        }
-
-        @Override
-        public void putFile(String fileId, byte[] content) {
-
-        }
     }
 
     /**
@@ -410,26 +411,24 @@ public class Coordinator extends Thread {
         recvMsg.destroy();
     }
 
-    /**
-     * An in-memory storage/agent for the AnalysisEngine.
-     * Listen the message from AnalysisEngine and provides
-     * necessary interface toward other components in the Coordinator
-     * */
-    static class AnalysisEngineAgent implements MessageListener, AnalysisQueryInterface{
 
-        @Override
-        public boolean keep(String fileId) {
-            return false;
+    private void handleAnalysisService() {
+        var recvMsg = ZMsg.recvMsg(mSocketAnalysis);
+        if(recvMsg.size() <= 0) {
+            LOG.error("Empty receive message");
+            return;
         }
 
-        @Override
-        public ZMsg onMessage(ZMsg message) {
-            return null;
+        var outputMsg = mAnalysis.onMessage(recvMsg);
+        var action = outputMsg.popString();
+        if(action.toUpperCase().equals("REQUEST")) {
+            if(outputMsg.size() > 0) {
+                outputMsg.send(mSocketPushService);
+            }
+        } else {
+            LOG.error(String.format("Unrecognized action \"%s\"", action));
         }
-    }
-
-    private void handleAnalysisEngine() {
-        // TODO
+        recvMsg.destroy();
     }
 
     ZMsg handleHandShaking(ZMsg message) {
@@ -460,7 +459,7 @@ public class Coordinator extends Thread {
         LOG.debug("Registering pollers...");
         ZMQ.Poller poller = mCtx.createPoller(PollId.Size);
         poller.register(mSocketPullService, ZMQ.Poller.POLLIN);
-        poller.register(mSocketAE, ZMQ.Poller.POLLIN);
+        poller.register(mSocketAnalysis, ZMQ.Poller.POLLIN);
         poller.register(mSocketHandShaking, ZMQ.Poller.POLLIN);
 
         while(!Thread.currentThread().isInterrupted()) {
@@ -472,7 +471,7 @@ public class Coordinator extends Thread {
 
             if(poller.pollin(PollId.ANALYSIS_ENGINE)) {
                 LOG.debug("Receive one event from AnalysisEngine");
-                handleAnalysisEngine();
+                handleAnalysisService();
             }
 
             if(poller.pollin(PollId.HAND_SHAKING)) {

@@ -9,12 +9,12 @@ public class Common {
      */
     // Internal
     public static final String EP_INT_SYNC_COORDINATOR_PULL = "inproc://sync-coordinator-pull";
-    public static final String EP_INT_SYNC_COORDINATOR_AE = "inproc://sync-coordinator-ae";
+    public static final String EP_INT_SYNC_COORDINATOR_AE = "tcp://localhost:7849";
     public static final String EP_INT_SYNC_COORDINATOR_PUSH = "inproc://sync-coordinator-push";
     public static final String EP_INT_COORDINATOR = "inproc://coordinator";
     public static final String EP_INT_PULL_SERVICE = "inproc://pull-service";
     public static final String EP_INT_PULL_CONTROL = "inproc://pull-control";
-    public static final String EP_INT_ANALYSIS_ENGINE = "inproc://analysis-engine";
+    public static final String EP_INT_ANALYSIS_SERVICE = "tcp://localhost:7850";
 
     /**
      * Exchange Protocol Related

@@ -5,7 +5,9 @@ import org.junit.Assert;
 import org.junit.Test;
 import org.zeromq.ZContext;
 import org.zeromq.ZMsg;
+import uci.edu.cs230.toy_cdn.fbs.EndPoint;
 import uci.edu.cs230.toy_cdn.fbs.FileExchangeHeader;
+import uci.edu.cs230.toy_cdn.fbs.Subscription;
 import uci.edu.cs230.toy_cdn.fbs.TraceNode;
 import zmq.ZMQ;
 
@@ -14,31 +16,59 @@ import java.util.List;
 import java.util.Optional;
 
 public class TestCoordinator {
+    private static class SimpleMockAnalysisService extends AbstractMockAnalysisService {
+        public SimpleMockAnalysisService(ZContext ipcContext) {
+            super(ipcContext);
+        }
+
+        @Override
+        public void run() {
+            init();
+        }
+    }
+    private static class CDNServices {
+        ZContext Ctx;
+
+        Coordinator Core;
+        PullService Pull;
+        PushService Push;
+        AbstractMockAnalysisService Analysis;
+
+        public CDNServices(boolean initializeOnly) {
+            Ctx = new ZContext();
+            Core = new Coordinator(Ctx,
+                    0, new EndPointAddress("localhost", 4444),
+                    List.of());
+            Core.InitializeOnly = initializeOnly;
+            Pull = new PullService(Ctx, 0);
+            Pull.InitializeOnly = initializeOnly;
+            Analysis = new SimpleMockAnalysisService(Ctx);
+            Push = new PushService(Ctx, new EndPointAddress("localhost", 4445));
+            Push.InitializeOnly = initializeOnly;
+        }
+
+        public void start() {
+            Analysis.start();
+            Pull.start();
+            Push.start();
+            Core.start();
+        }
+
+        public void joinAll() throws InterruptedException{
+            Analysis.join();
+            Pull.join();
+            Push.join();
+            Core.join();
+        }
+    }
+
     @Test
     public void testInitialization() {
-        ZContext ctx = new ZContext();
-
-        var coordinator = new Coordinator(ctx,
-                0, new EndPointAddress("localhost", 4444),
-                List.of());
-        coordinator.InitializeOnly = true;
-        var pullService = new PullService(ctx, 0);
-        pullService.InitializeOnly = true;
-        var analysisEngine = new AnalysisEngineService(ctx);
-        analysisEngine.InitializeOnly = true;
-        var pushService = new PushService(ctx, new EndPointAddress("localhost", 4445));
-        pushService.InitializeOnly = true;
+        var cdn = new CDNServices(true);
 
         try {
-            analysisEngine.start();
-            pullService.start();
-            pushService.start();
-            coordinator.start();
-
-            pullService.join();
-            analysisEngine.join();
-            coordinator.join();
-            pushService.join();
+            cdn.start();
+            cdn.joinAll();
         }catch (InterruptedException e) {
             throw new AssertionError("Interrupted");
         }
@@ -226,5 +256,41 @@ public class TestCoordinator {
         content = reply.pop();
         Assert.assertTrue(content.getString(ZMQ.CHARSET).contains("content3"));
         reply.destroy();
+    }
+
+    @Test
+    public void testHandShaking() {
+        var cdn = new CDNServices(true);
+
+        try {
+            cdn.start();
+            cdn.joinAll();
+
+            final var coordinatorPort = 7777;
+
+            var builder = new FlatBufferBuilder(0);
+            var addressOffset = builder.createString("localhost");
+            int endPointOffset  = EndPoint.createEndPoint(builder, addressOffset, coordinatorPort);
+            builder.finish(endPointOffset);
+
+            var handShakeMsg = new ZMsg();
+            handShakeMsg.add(Common.EXG_ACTION_NEW_NEIGHBOR);
+            handShakeMsg.add(builder.sizedByteArray());
+            var outputMsg = cdn.Core.handleHandShaking(handShakeMsg);
+            handShakeMsg.destroy();
+            Assert.assertEquals(2, outputMsg.size());
+            var action = outputMsg.popString();
+            Assert.assertEquals(Common.INT_ACTION_SUBSCRIBE, action);
+            var rawSubscription = outputMsg.pop();
+            var subscription = Subscription.getRootAsSubscription(ByteBuffer.wrap(rawSubscription.getData()));
+            Assert.assertEquals(1, subscription.endPointsLength());
+            var endPoint = subscription.endPoints(0);
+            // Port of PushService would be port of Coordinator + 1
+            Assert.assertEquals(coordinatorPort + 1, endPoint.port());
+
+            outputMsg.destroy();
+        } catch (InterruptedException e) {
+            Assert.fail("Interrupted");
+        }
     }
 }
