@@ -127,7 +127,8 @@ public class Coordinator extends Thread {
         mSocketHandShaking.bind(String.format("tcp://%s:%s", mExternalAddress.IpAddress, mExternalAddress.Port));
 
         // Initialize components
-        if(mDefaultLocalStorageInterface) mLocalStorage = new LocalStorageAgent();
+        // FIXME: max number of files
+        if(mDefaultLocalStorageInterface) mLocalStorage = new LocalStorageAgent(100);
         mAnalysis = new AnalysisServiceAgent(mSelfNodeId, mLocalStorage);
         mRespondHandler = new RespondHandler(mSelfNodeId, mAnalysis, mLocalStorage);
         mRequestHandler = new RequestHandler(mSelfNodeId, mLocalStorage);

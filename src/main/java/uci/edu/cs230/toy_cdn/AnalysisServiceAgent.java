@@ -1,6 +1,8 @@
 package uci.edu.cs230.toy_cdn;
 
 import com.google.flatbuffers.FlatBufferBuilder;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.zeromq.ZMsg;
 import uci.edu.cs230.toy_cdn.fbs.FileExchangeHeader;
 import uci.edu.cs230.toy_cdn.fbs.TraceNode;
@@ -16,6 +18,8 @@ import java.util.stream.Collectors;
  * necessary interface toward other components in the Coordinator
  * */
 public class AnalysisServiceAgent extends Coordinator.AnalysisAgentInterface {
+    private final static Logger LOG = LogManager.getLogger(AnalysisServiceAgent.class);
+
     /**
      * Multi-Tier Ranking System
      * Every time a new ranking (from 1~10) from AnalysisService comes in
@@ -113,6 +117,10 @@ public class AnalysisServiceAgent extends Coordinator.AnalysisAgentInterface {
                 })
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
+
+        if(toPurged.size() > 0)
+            LOG.debug(String.format("Total of %d entries got purged", toPurged.size()));
+
         // Remove from the map
         for(var file : toPurged) {
             mMultiTierRankingMap.remove(file);
@@ -161,6 +169,8 @@ public class AnalysisServiceAgent extends Coordinator.AnalysisAgentInterface {
 
         if(requestList.size() == 0)
             return new ZMsg();
+
+        LOG.debug(String.format("Found %d hot entries", requestList.size()));
 
         // constructing requests
         var reqMsg = new ZMsg();
