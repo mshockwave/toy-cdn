@@ -6,6 +6,7 @@ import net.markenwerk.utils.lrucache.LruCacheListener;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdfs.DistributedFileSystem;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -57,8 +58,9 @@ public class LocalStorageAgent implements Coordinator.LocalStorageInterface, Lru
         LOG.debug(String.format("Using HDFS at %s ...", fsUri));
         try {
             var hadoopConfig = new Configuration();
+            hadoopConfig.set("fs.hdfs.impl", DistributedFileSystem.class.getName());
             hadoopConfig.set("fs.defaultFS", fsUri);
-            mFS = FileSystem.get(hadoopConfig);
+            mFS = FileSystem.newInstance(hadoopConfig);
         } catch (IOException e) {
             LOG.error("Failed to retrieve HDFS");
             LOG.error(e);

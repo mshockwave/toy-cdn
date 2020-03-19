@@ -104,8 +104,34 @@ public class Main {
         var neighborEndPoints = fetchNeighborEndPoints(configProp);
         if(neighborEndPoints == null) {
             LOG.error("Failed to retrieve neighbor end points");
+            return;
         } else {
             LOG.debug("Size of neighbors: " + neighborEndPoints.size());
+        }
+
+        /*
+         * Step 2: Launch all the components
+         * */
+        var serviceAddr = configProp.getProperty("cdn.service_address");
+        var mainPort = Integer.parseInt(configProp.getProperty("cdn.port"));
+        try (var ctx = new ZContext()){
+            var mainEndPoint = new EndPointAddress(serviceAddr, mainPort);
+            var pushEndPoint = new EndPointAddress(serviceAddr, mainPort + 1);
+
+            var core = new Coordinator(ctx, mainEndPoint, neighborEndPoints);
+            var selfId = Common.getNodeId(mainEndPoint);
+            var pull = new PullService(ctx, selfId);
+            var push = new PushService(ctx, pushEndPoint);
+
+            core.start();
+            pull.start();
+            push.start();
+
+            core.join();
+            pull.join();
+            push.join();
+        } catch (InterruptedException e) {
+            LOG.error("Interrupted");
         }
     }
 }

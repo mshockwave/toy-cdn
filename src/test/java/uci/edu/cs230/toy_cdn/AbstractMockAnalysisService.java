@@ -20,11 +20,13 @@ public class AbstractMockAnalysisService extends Thread {
     protected void init() {
         LOG.info("Initializing MockAnalysisService...");
 
-        mSocketInternal = mInternalCtx.createSocket(SocketType.PUSH);
-        mSocketInternal.bind(Common.EP_INT_ANALYSIS_SERVICE);
         LOG.info("Setup MockAnalysisService");
+        mSocketInternal = mInternalCtx.createSocket(SocketType.PUSH);
+        var serviceEndPoint = Common.getAnalysisServiceEndPoint();
+        mSocketInternal.bind(serviceEndPoint);
+        LOG.info(String.format("Listening service on %s", serviceEndPoint));
         var syncInternal = mInternalCtx.createSocket(SocketType.PAIR);
-        syncInternal.connect(Common.EP_INT_SYNC_COORDINATOR_AE);
+        syncInternal.connect(Common.getAnalysisSyncEndPoint());
         syncInternal.send("READY", 0);
         syncInternal.close();
     }

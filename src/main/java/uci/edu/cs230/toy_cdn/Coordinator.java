@@ -103,13 +103,18 @@ public class Coordinator extends Thread {
         LOG.debug("PullControl connected");
 
         syncAE = mCtx.createSocket(SocketType.PAIR);
-        syncAE.bind(Common.EP_INT_SYNC_COORDINATOR_AE);
+        syncAE.bind(Common.getAnalysisSyncEndPoint());
         // Wait for ready signal
         syncAE.recv(0);
         syncAE.close();
         LOG.debug("Subscribe to AnalysisService");
         mSocketAnalysis = mCtx.createSocket(SocketType.PULL);
-        mSocketAnalysis.connect(Common.EP_INT_ANALYSIS_SERVICE);
+        var analysisServiceEndPoint = Common.getAnalysisServiceEndPoint();
+        if(mSocketAnalysis.connect(analysisServiceEndPoint)) {
+            LOG.debug(String.format("Connected to AnalysisService at %s", analysisServiceEndPoint));
+        } else {
+            LOG.error(String.format("Failed to connect to AnalysisService at %s", analysisServiceEndPoint));
+        }
 
         LOG.debug("Setup end point for PushService");
         mSocketPushService = mCtx.createSocket(SocketType.PUSH);

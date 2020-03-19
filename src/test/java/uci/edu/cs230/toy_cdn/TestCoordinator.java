@@ -37,14 +37,22 @@ public class TestCoordinator {
         public CDNServices(boolean initializeOnly) {
             Ctx = new ZContext();
             Core = new Coordinator(Ctx,
-                    0, new EndPointAddress("localhost", 4444),
+                    0, new EndPointAddress("localhost", 5555),
                     List.of());
             Core.InitializeOnly = initializeOnly;
             Pull = new PullService(Ctx, 0);
             Pull.InitializeOnly = initializeOnly;
-            Analysis = new SimpleMockAnalysisService(Ctx);
-            Push = new PushService(Ctx, new EndPointAddress("localhost", 4445));
+            Push = new PushService(Ctx, new EndPointAddress("localhost", 5556));
             Push.InitializeOnly = initializeOnly;
+        }
+
+        public CDNServices(Coordinator.LocalStorageInterface localStorage) {
+            Ctx = new ZContext();
+            Core = new Coordinator(Ctx,
+                    0, new EndPointAddress("localhost", 5555),
+                    List.of(), localStorage);
+            Pull = new PullService(Ctx, 0);
+            Push = new PushService(Ctx, new EndPointAddress("localhost", 5556));
         }
 
         public void start() {
@@ -65,6 +73,7 @@ public class TestCoordinator {
     @Test
     public void testInitialization() {
         var cdn = new CDNServices(true);
+        cdn.Analysis = new SimpleMockAnalysisService(cdn.Ctx);
 
         try {
             cdn.start();
@@ -291,6 +300,62 @@ public class TestCoordinator {
             outputMsg.destroy();
         } catch (InterruptedException e) {
             Assert.fail("Interrupted");
+        }
+    }
+
+    @Test
+    public void testSimpleAnalysisCommunication() {
+        class SimpleMessageMockAnalysisService extends AbstractMockAnalysisService {
+
+            public SimpleMessageMockAnalysisService(ZContext ipcContext) {
+                super(ipcContext);
+            }
+
+            @Override
+            public void run(){
+                init();
+                try {
+                    Thread.sleep(500);
+
+                    {
+                        var message = new ZMsg();
+                        message.add("file1");
+                        message.add("file2");
+                        message.send(mSocketInternal);
+                    }
+                    Thread.sleep(500);
+
+                    {
+                        var message = new ZMsg();
+                        message.add("file3");
+                        message.add("file4");
+                        message.send(mSocketInternal);
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+
+        class EmptyLocalStorage implements Coordinator.LocalStorageInterface {
+
+            @Override
+            public Optional<byte[]> fetchFile(String fileId) {
+                return Optional.empty();
+            }
+
+            @Override
+            public void putFile(String fileId, byte[] content) { }
+        }
+
+        var cdn = new CDNServices(new EmptyLocalStorage());
+        cdn.Analysis = new SimpleMessageMockAnalysisService(cdn.Ctx);
+        try {
+            cdn.start();
+
+            cdn.joinAll();
+        } catch (InterruptedException e) {
+            Assert.fail(e.getMessage());
         }
     }
 }

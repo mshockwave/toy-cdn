@@ -147,6 +147,8 @@ public class AnalysisServiceAgent extends Coordinator.AnalysisAgentInterface {
             return new ZMsg();
         }
 
+        LOG.error(String.format("Got one message of size %d", message.size()));
+
         for(int i = 0, len = Math.min(message.size(), 10); i < len; ++i) {
             var fileId = message.popString();
             var rank = i + 1;
