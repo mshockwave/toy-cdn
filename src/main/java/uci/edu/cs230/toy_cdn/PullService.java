@@ -74,6 +74,7 @@ public class PullService extends Thread {
                 socket.subscribe(Common.EXG_TOPIC_ALL);
                 mPoller.register(socket, ZMQ.Poller.POLLIN);
                 mSocketSubscriptions.add(socket);
+                LOG.debug(String.format("Subscribe to %s", addressStr));
             }
         } else {
             LOG.error(String.format("Unrecognized action: \"%s\"", action));
@@ -101,6 +102,7 @@ public class PullService extends Thread {
                 if(mPoller.pollin(i + 1)) {
                     // For now, we simply forward the message to coordinator
                     // with first frame (i.e. the subscription topic) removed
+                    LOG.debug(String.format("Receive message from neighbor %d", i));
                     var socket = mSocketSubscriptions.get(i);
                     var recvMsg = ZMsg.recvMsg(socket);
                     if(recvMsg.size() < 1) {

@@ -84,7 +84,7 @@ public class AnalysisServiceAgent extends Coordinator.AnalysisAgentInterface {
     public AnalysisServiceAgent(long selfId, Coordinator.LocalStorageInterface localStorage) {
         mLocalStorage = localStorage;
         mMultiTierRankingMap = new HashMap<>();
-        mCurrentCounter = 1;
+        mCurrentCounter = 0;
         mRequestSequence = 0;
         mSelfId = selfId;
     }
@@ -152,7 +152,7 @@ public class AnalysisServiceAgent extends Coordinator.AnalysisAgentInterface {
         for(int i = 0, len = Math.min(message.size(), 10); i < len; ++i) {
             var fileId = message.popString();
             var rank = i + 1;
-            var entry = mMultiTierRankingMap.getOrDefault(fileId, MultiTierRankingEntry.blank(mCurrentCounter - 1));
+            var entry = mMultiTierRankingMap.getOrDefault(fileId, MultiTierRankingEntry.blank(mCurrentCounter));
             if(rank <= 2) {
                 // Tier0
                 entry.Tier0Counter++;
@@ -173,6 +173,10 @@ public class AnalysisServiceAgent extends Coordinator.AnalysisAgentInterface {
             return new ZMsg();
 
         LOG.debug(String.format("Found %d hot entries", requestList.size()));
+
+        // Double check if the file is really missing
+        requestList.removeIf(fileId -> mLocalStorage.fetchFile(fileId).isPresent());
+        LOG.debug(String.format("Requesting %d files...", requestList.size()));
 
         // constructing requests
         var reqMsg = new ZMsg();

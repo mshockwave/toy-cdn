@@ -43,8 +43,9 @@ public class PushService extends Thread {
         mSocketInternalLink = mCtx.createSocket(SocketType.PULL);
         mSocketInternalLink.connect(Common.EP_INT_COORDINATOR);
 
+        LOG.debug(String.format("Will serve PushService at %s:%d", "*", mExternalAddress.Port));
         mSocketPublisher = mCtx.createSocket(SocketType.PUB);
-        mSocketPublisher.bind(String.format("tcp://%s:%d", mExternalAddress.IpAddress, mExternalAddress.Port));
+        mSocketPublisher.bind(String.format("tcp://%s:%d", "*", mExternalAddress.Port));
         LOG.debug("Setup PushService");
 
         // ping back

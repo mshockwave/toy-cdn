@@ -35,7 +35,7 @@ public class Common {
         var configProp = new Properties();
         try {
             configProp.load(configStream);
-            var addr = configProp.getProperty("cdn.service_address");
+            var addr = configProp.getProperty("cdn.analysis.sync_address");
             var port = Integer.parseInt(configProp.getProperty("cdn.analysis.port")) + 1;
             return String.format("tcp://%s:%d", addr, port);
         } catch (IOException e) {

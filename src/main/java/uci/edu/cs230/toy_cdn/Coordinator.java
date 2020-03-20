@@ -129,7 +129,7 @@ public class Coordinator extends Thread {
 
         LOG.debug("Setup handshaking end point");
         mSocketHandShaking = mCtx.createSocket(SocketType.REP);
-        mSocketHandShaking.bind(String.format("tcp://%s:%s", mExternalAddress.IpAddress, mExternalAddress.Port));
+        mSocketHandShaking.bind(String.format("tcp://%s:%s", "*", mExternalAddress.Port));
 
         // Initialize components
         // FIXME: max number of files

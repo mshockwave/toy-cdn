@@ -31,11 +31,14 @@ public class LocalStorageAgent implements Coordinator.LocalStorageInterface, Lru
      * */
     private void synchronizeWithFS() {
         try {
+            int counter = 0;
             var itFiles = mFS.listFiles(mStorageRoot, false);
             while(itFiles.hasNext()) {
+                counter++;
                 var fsPath = itFiles.next().getPath();
                 mLocalCache.put(fsPath.getName(), fsPath.toUri().getPath());
             }
+            LOG.debug(String.format("Fetch total of %d existing files", counter));
         } catch (IOException e) {
             LOG.error("Failed to synchronized with existing FS content");
             LOG.error(e);
@@ -90,10 +93,15 @@ public class LocalStorageAgent implements Coordinator.LocalStorageInterface, Lru
         initHDFS();
     }
 
+    private String escapeFileId(String fileId) {
+        return fileId.replaceAll("/", "_");
+    }
+
     @Override
     public Optional<byte[]> fetchFile(String fileId) {
+        var escaped = escapeFileId(fileId);
         // Use get method to make sure the LRU access got recorded
-        var realPath = mLocalCache.get(fileId);
+        var realPath = mLocalCache.get(escaped);
         if(realPath != null) {
             try{
                 var fsPath = new Path(realPath);
@@ -110,12 +118,13 @@ public class LocalStorageAgent implements Coordinator.LocalStorageInterface, Lru
 
     @Override
     public void putFile(String fileId, byte[] content) {
-        var fsPath = new Path(mStorageRoot, fileId);
+        var escaped = escapeFileId(fileId);
+        var fsPath = new Path(mStorageRoot, escaped);
         var path = fsPath.toUri().getPath();
         try {
             var outputStream = mFS.create(fsPath);
             outputStream.write(content);
-            mLocalCache.put(fileId, path);
+            mLocalCache.put(escaped, path);
             outputStream.close();
         } catch (IOException e) {
             LOG.error(String.format("Failed to create and write file %s", path));
